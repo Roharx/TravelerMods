@@ -1,5 +1,5 @@
 /**
- * Documentation: TokenTraveler v1.0 (sequence pattern system)
+ * Documentation: TokenTraveler v1.1 (cooldown bugfix)
  * 
  * Usage: Place any form of a token on any layer (My recommendation would be GM layer for things that you don't want to be visible
  * but you can use the token layer as well for interactive portals, jump pads, etc.)
@@ -50,7 +50,7 @@
  */
 
 on('ready', () => {
-    log('TokenTraveler v1.0 ready (split-cycle odd-even).');
+    log('TokenTraveler v1.1 ready (cooldown bugfix).');
 
     if (!state.TokenTraveler)
         state.TokenTraveler = { cooldown: {}, notifications: true };
@@ -63,6 +63,11 @@ on('ready', () => {
 // ---------------------------------------------------------------------------
 on('chat:message', (msg) => {
     if (msg.type !== 'api' || !playerIsGM(msg.playerid)) return;
+
+    // Cooldown error message fix
+    if (!state.TokenTraveler)
+        state.TokenTraveler = { cooldown: {}, notifications: true };
+
     const args = msg.content.split(/\s+/);
     if (args[0] !== '!TokenTraveler') return;
 
@@ -79,6 +84,10 @@ on('chat:message', (msg) => {
 // Main teleportation logic
 // ---------------------------------------------------------------------------
 on('change:graphic', (obj, prev) => {
+    // Cooldown error message fix
+    if (!state.TokenTraveler)
+        state.TokenTraveler = { cooldown: {}, notifications: true };
+
     if (obj.get('subtype') !== 'token') return;
     if ((obj.get('name') || '').startsWith('Traveler:')) return;
 

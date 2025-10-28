@@ -1,5 +1,5 @@
 /**
- * Documentation: TokenTraveler v0.7 (multi-map teleportation)
+ * Documentation: TokenTraveler v0.8 (multi-map teleportation, full clone)
  * 
  * Usage: Place any form of a token on any layer (My recommendation would be GM layer for things that you don't want to be visible
  * but you can use the token layer as well for interactive portals, jump pads, etc.)
@@ -29,24 +29,25 @@
  */
 
 on('ready', () => {
-    log('TokenTraveler v0.7 ready (multi-map teleportation).');
+    log('TokenTraveler v0.8 ready (multi-map teleportation + full clone).');
 
-    // Persistent state for cooldowns
     if (!state.TokenTraveler) state.TokenTraveler = { cooldown: {} };
 });
 
 on('change:graphic', (obj, prev) => {
     // Only trigger for actual tokens (not traveler markers)
     if (obj.get('subtype') !== 'token') return;
-    if (obj.get('name').startsWith('Traveler:')) return;
+    if ((obj.get('name') || '').startsWith('Traveler:')) return;
 
+    // prevent re-trigger loop
     const tokenId = obj.id;
-    if (state.TokenTraveler.cooldown[tokenId]) return; // prevent re-trigger loop
+    if (state.TokenTraveler.cooldown[tokenId] || 
+    state.TokenTraveler.cooldown[obj.get('name')]) return; 
 
+    // get from all pages
     const pageId = obj.get('pageid');
-    const travelers = findObjs({
-        _type: 'graphic'
-    }).filter(g => g.get('name').startsWith('Traveler:')); // get from all pages
+    const travelers = findObjs({ _type: 'graphic' })
+        .filter(g => (g.get('name') || '').startsWith('Traveler:')); 
 
     const tokenX = obj.get('left');
     const tokenY = obj.get('top');
@@ -94,29 +95,39 @@ on('change:graphic', (obj, prev) => {
 
             // Apply cooldown immediately
             state.TokenTraveler.cooldown[tokenId] = true;
+            
+            // Prevent immediate re-trigger from clones or other maps
+            const tokenName = obj.get('name');
+            if (tokenName) {
+                state.TokenTraveler.cooldown[tokenName] = true;
+                setTimeout(() => delete state.TokenTraveler.cooldown[tokenName], 1500);
+            }
 
             // Handle cross-map teleport
             if (nextNode.pageid !== pageId) {
                 const destPageId = nextNode.pageid;
 
-                // Clone the token on the new page
-                const clone = createObj('graphic', {
-                    _pageid: destPageId,
-                    imgsrc: obj.get('imgsrc'),
-                    name: obj.get('name'),
-                    left: nextNode.obj.get('left'),
-                    top: nextNode.obj.get('top'),
-                    width: obj.get('width'),
-                    height: obj.get('height'),
-                    layer: 'objects',
-                    represents: obj.get('represents'),
-                    controlledby: obj.get('controlledby')
+                // --- FULL CLONE IMPLEMENTATION ---
+                const attrs = obj.attributes;
+                const cloneData = { _type: 'graphic', _pageid: destPageId };
+
+                // Copy every attribute except unique / read-only ones
+                Object.keys(attrs).forEach(key => {
+                    if (['_id', '_type', '_pageid', '_zorder'].includes(key)) return;
+                    cloneData[key] = attrs[key];
                 });
 
-                // Delete the old token
+                // Override with new position
+                cloneData.left = nextNode.obj.get('left');
+                cloneData.top = nextNode.obj.get('top');
+
+                // Create the clone
+                const clone = createObj('graphic', cloneData);
+
+                // Remove the old token
                 obj.remove();
 
-                sendChat('TokenTraveler', `/w gm ${clone.get('name')} teleported to a new map (${groupName} Node ${nextNode.id}).`);
+                sendChat('TokenTraveler', `/w gm ${clone ? clone.get('name') : obj.get('name')} teleported to a new map (${groupName} Node ${nextNode.id}).`);
             } else {
                 // Same map — just move the token
                 obj.set({
@@ -128,7 +139,7 @@ on('change:graphic', (obj, prev) => {
             // Remove cooldown after 1.5 seconds
             setTimeout(() => {
                 delete state.TokenTraveler.cooldown[tokenId];
-            }, 1500); //<--------- You can change the cooldown time here (in millisecounds, default: 1500)
+            }, 1500); //<--------- Change cooldown time here (ms, default: 1500)
         }
     });
 });

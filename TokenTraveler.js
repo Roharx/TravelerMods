@@ -50,7 +50,7 @@
  */
 
 on('ready', () => {
-    log('TokenTraveler v1.1 ready (split-cycle odd-even).');
+    log('TokenTraveler v1.0 ready (split-cycle odd-even).');
 
     if (!state.TokenTraveler)
         state.TokenTraveler = { cooldown: {}, notifications: true };

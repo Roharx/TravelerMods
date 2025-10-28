@@ -50,7 +50,7 @@
  */
 
 on('ready', () => {
-    log('TokenTraveler v1.1 ready (cooldown bugfix).');
+    log('TokenTraveler v1.1.1 ready (cooldown bugfix).');
 
     if (!state.TokenTraveler)
         state.TokenTraveler = { cooldown: {}, notifications: true };
@@ -191,11 +191,18 @@ on('change:graphic', (obj, prev) => {
                 cloneData[key] = attrs[key];
             });
 
+            // Position at destination
             cloneData.left = nextNode.obj.get('left');
             cloneData.top = nextNode.obj.get('top');
 
+            // If nameless, auto-assign a temporary name
+            if (!cloneData.name || cloneData.name.trim() === '') {
+                cloneData.name = 'Unnamed Token';
+            }
+
             const clone = createObj('graphic', cloneData);
             obj.remove();
+
 
             if (state.TokenTraveler.notifications) {
                 sendChat('TokenTraveler', `/w gm ${clone ? clone.get('name') : obj.get('name')} teleported to a new map (${groupName} Node ${nextNode.id}, Mode: ${mode}).`);

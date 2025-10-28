@@ -1,5 +1,5 @@
 /**
- * Documentation: TokenTraveler v0.8 (multi-map teleportation, full clone)
+ * Documentation: TokenTraveler v0.9 (Toggle Notifications)
  * 
  * Usage: Place any form of a token on any layer (My recommendation would be GM layer for things that you don't want to be visible
  * but you can use the token layer as well for interactive portals, jump pads, etc.)
@@ -26,28 +26,54 @@
  * Currently how TokenTraveler works:
  * On the same map: only moves the token, this usually comes with an animation of the token being displaced
  * On different maps: cloning the triggering token to the next Traveler point and removing the one on the triggered (current) point
+ * 
+ * Toggle Notifications update:
+ * Commands (GM only):
+ *   !TokenTraveler --notification-off    → disables GM whisper notifications
+ *   !TokenTraveler --notification-on     → enables GM whisper notifications
+ * 
+ * Default: notifications ON
  */
 
 on('ready', () => {
-    log('TokenTraveler v0.8 ready (multi-map teleportation + full clone).');
+    log('TokenTraveler v0.9 ready (Toggle Notifications).');
 
-    if (!state.TokenTraveler) state.TokenTraveler = { cooldown: {} };
+    if (!state.TokenTraveler) state.TokenTraveler = { cooldown: {}, notifications: true };
+    if (state.TokenTraveler.notifications === undefined) state.TokenTraveler.notifications = true;
 });
 
+// ---------------------------------------------------------------------------
+// Chat command handler
+// ---------------------------------------------------------------------------
+on('chat:message', (msg) => {
+    if (msg.type !== 'api' || !playerIsGM(msg.playerid)) return;
+    const args = msg.content.split(/\s+/);
+    if (args[0] !== '!TokenTraveler') return;
+
+    if (args.includes('--notification-off')) {
+        state.TokenTraveler.notifications = false;
+        sendChat('TokenTraveler', '/w gm 📴 Notifications disabled.');
+    }
+    else if (args.includes('--notification-on')) {
+        state.TokenTraveler.notifications = true;
+        sendChat('TokenTraveler', '/w gm 🔔 Notifications enabled.');
+    }
+});
+
+// ---------------------------------------------------------------------------
+// Main teleportation logic
+// ---------------------------------------------------------------------------
 on('change:graphic', (obj, prev) => {
-    // Only trigger for actual tokens (not traveler markers)
     if (obj.get('subtype') !== 'token') return;
     if ((obj.get('name') || '').startsWith('Traveler:')) return;
 
-    // prevent re-trigger loop
     const tokenId = obj.id;
-    if (state.TokenTraveler.cooldown[tokenId] || 
-    state.TokenTraveler.cooldown[obj.get('name')]) return; 
+    if (state.TokenTraveler.cooldown[tokenId] ||
+        state.TokenTraveler.cooldown[obj.get('name')]) return;
 
-    // get from all pages
     const pageId = obj.get('pageid');
     const travelers = findObjs({ _type: 'graphic' })
-        .filter(g => (g.get('name') || '').startsWith('Traveler:')); 
+        .filter(g => (g.get('name') || '').startsWith('Traveler:'));
 
     const tokenX = obj.get('left');
     const tokenY = obj.get('top');
@@ -58,88 +84,83 @@ on('change:graphic', (obj, prev) => {
         const tW = traveler.get('width');
         const tH = traveler.get('height');
         const tPageId = traveler.get('pageid');
-
-        if (tPageId !== pageId) return; // only detect on current map
+        if (tPageId !== pageId) return;
 
         const inX = tokenX > (tLeft - tW / 2) && tokenX < (tLeft + tW / 2);
         const inY = tokenY > (tTop - tH / 2) && tokenY < (tTop + tH / 2);
+        if (!(inX && inY)) return;
 
-        if (inX && inY) {
-            const parts = traveler.get('name').split(':').map(p => p.trim());
-            const groupName = parts[1] || 'Unknown';
-            const nodeId = parseInt(parts[2]) || 0;
+        const parts = traveler.get('name').split(':').map(p => p.trim());
+        const groupName = parts[1] || 'Unknown';
+        const nodeId = parseInt(parts[2]) || 0;
 
-            // Find and sort all nodes in this group (across all pages)
-            const groupNodes = travelers
-                .filter(t => {
-                    const p = t.get('name').split(':').map(x => x.trim());
-                    return p[1] === groupName;
-                })
-                .map(t => {
-                    const p = t.get('name').split(':').map(x => x.trim());
-                    return {
-                        id: parseInt(p[2]) || 0,
-                        obj: t,
-                        pageid: t.get('pageid')
-                    };
-                })
-                .sort((a, b) => a.id - b.id);
+        // Find and sort all nodes in this group (across all pages)
+        const groupNodes = travelers
+            .filter(t => {
+                const p = t.get('name').split(':').map(x => x.trim());
+                return p[1] === groupName;
+            })
+            .map(t => {
+                const p = t.get('name').split(':').map(x => x.trim());
+                return {
+                    id: parseInt(p[2]) || 0,
+                    obj: t,
+                    pageid: t.get('pageid')
+                };
+            })
+            .sort((a, b) => a.id - b.id);
 
-            const currentIndex = groupNodes.findIndex(n => n.id === nodeId);
-            const nextIndex = (currentIndex + 1) % groupNodes.length;
-            const nextNode = groupNodes[nextIndex];
+        const currentIndex = groupNodes.findIndex(n => n.id === nodeId);
+        const nextIndex = (currentIndex + 1) % groupNodes.length;
+        const nextNode = groupNodes[nextIndex];
 
-            // Announce both
+        // Apply cooldown immediately
+        state.TokenTraveler.cooldown[tokenId] = true;
+        const tokenName = obj.get('name');
+        if (tokenName) {
+            state.TokenTraveler.cooldown[tokenName] = true;
+            setTimeout(() => delete state.TokenTraveler.cooldown[tokenName], 1500);
+        }
+
+        // Announce both (if notifications on)
+        if (state.TokenTraveler.notifications) {
             sendChat('TokenTraveler', `/w gm ${obj.get('name')} entered ${groupName} (Node ${nodeId})`);
             sendChat('TokenTraveler', `/w gm ${obj.get('name')} exited ${groupName} (Node ${nextNode.id})`);
-
-            // Apply cooldown immediately
-            state.TokenTraveler.cooldown[tokenId] = true;
-            
-            // Prevent immediate re-trigger from clones or other maps
-            const tokenName = obj.get('name');
-            if (tokenName) {
-                state.TokenTraveler.cooldown[tokenName] = true;
-                setTimeout(() => delete state.TokenTraveler.cooldown[tokenName], 1500);
-            }
-
-            // Handle cross-map teleport
-            if (nextNode.pageid !== pageId) {
-                const destPageId = nextNode.pageid;
-
-                // --- FULL CLONE IMPLEMENTATION ---
-                const attrs = obj.attributes;
-                const cloneData = { _type: 'graphic', _pageid: destPageId };
-
-                // Copy every attribute except unique / read-only ones
-                Object.keys(attrs).forEach(key => {
-                    if (['_id', '_type', '_pageid', '_zorder'].includes(key)) return;
-                    cloneData[key] = attrs[key];
-                });
-
-                // Override with new position
-                cloneData.left = nextNode.obj.get('left');
-                cloneData.top = nextNode.obj.get('top');
-
-                // Create the clone
-                const clone = createObj('graphic', cloneData);
-
-                // Remove the old token
-                obj.remove();
-
-                sendChat('TokenTraveler', `/w gm ${clone ? clone.get('name') : obj.get('name')} teleported to a new map (${groupName} Node ${nextNode.id}).`);
-            } else {
-                // Same map — just move the token
-                obj.set({
-                    left: nextNode.obj.get('left'),
-                    top: nextNode.obj.get('top')
-                });
-            }
-
-            // Remove cooldown after 1.5 seconds
-            setTimeout(() => {
-                delete state.TokenTraveler.cooldown[tokenId];
-            }, 1500); //<--------- Change cooldown time here (ms, default: 1500)
         }
+
+        // Handle cross-map teleport
+        if (nextNode.pageid !== pageId) {
+            const destPageId = nextNode.pageid;
+
+            // --- FULL CLONE IMPLEMENTATION ---
+            const attrs = obj.attributes;
+            const cloneData = { _type: 'graphic', _pageid: destPageId };
+
+            Object.keys(attrs).forEach(key => {
+                if (['_id', '_type', '_pageid', '_zorder'].includes(key)) return;
+                cloneData[key] = attrs[key];
+            });
+
+            cloneData.left = nextNode.obj.get('left');
+            cloneData.top = nextNode.obj.get('top');
+
+            const clone = createObj('graphic', cloneData);
+            obj.remove();
+
+            if (state.TokenTraveler.notifications) {
+                sendChat('TokenTraveler', `/w gm ${clone ? clone.get('name') : obj.get('name')} teleported to a new map (${groupName} Node ${nextNode.id}).`);
+            }
+        } else {
+            // Same map — just move the token
+            obj.set({
+                left: nextNode.obj.get('left'),
+                top: nextNode.obj.get('top')
+            });
+        }
+
+        // Remove cooldown after 1.5 seconds
+        setTimeout(() => {
+            delete state.TokenTraveler.cooldown[tokenId];
+        }, 1500); //<------------------- change millisecounds here
     });
 });

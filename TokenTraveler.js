@@ -1,5 +1,5 @@
 /**
- * Documentation: TokenTraveler v0.9 (Toggle Notifications)
+ * Documentation: TokenTraveler v1.0 (sequence pattern system)
  * 
  * Usage: Place any form of a token on any layer (My recommendation would be GM layer for things that you don't want to be visible
  * but you can use the token layer as well for interactive portals, jump pads, etc.)
@@ -27,19 +27,35 @@
  * On the same map: only moves the token, this usually comes with an animation of the token being displaced
  * On different maps: cloning the triggering token to the next Traveler point and removing the one on the triggered (current) point
  * 
- * Toggle Notifications update:
+ * -----------------------------------------------------------------
+ * 
+ * v0.9 Toggle Notifications update:
  * Commands (GM only):
  *   !TokenTraveler --notification-off    → disables GM whisper notifications
  *   !TokenTraveler --notification-on     → enables GM whisper notifications
  * 
  * Default: notifications ON
+ * 
+ * -----------------------------------------------------------------
+ * 
+ * v1.0 sequence pattern system update:
+ * Now supports an optional pattern parameter in Traveler names:
+ * Traveler:<GroupName>:<NodeId>[:<Mode>]
+ * Modes:
+ *   ascending  - (default) 1→2→3→1→...
+ *   descending - reverse  3→2→1→3→...
+ *   random     - teleport to a random node (not self)
+ *   odd-even   - 1→3→5→1, 2→4→6→2...
+ * 
  */
 
 on('ready', () => {
-    log('TokenTraveler v0.9 ready (Toggle Notifications).');
+    log('TokenTraveler v1.1 ready (split-cycle odd-even).');
 
-    if (!state.TokenTraveler) state.TokenTraveler = { cooldown: {}, notifications: true };
-    if (state.TokenTraveler.notifications === undefined) state.TokenTraveler.notifications = true;
+    if (!state.TokenTraveler)
+        state.TokenTraveler = { cooldown: {}, notifications: true };
+    if (state.TokenTraveler.notifications === undefined)
+        state.TokenTraveler.notifications = true;
 });
 
 // ---------------------------------------------------------------------------
@@ -53,8 +69,7 @@ on('chat:message', (msg) => {
     if (args.includes('--notification-off')) {
         state.TokenTraveler.notifications = false;
         sendChat('TokenTraveler', '/w gm 📴 Notifications disabled.');
-    }
-    else if (args.includes('--notification-on')) {
+    } else if (args.includes('--notification-on')) {
         state.TokenTraveler.notifications = true;
         sendChat('TokenTraveler', '/w gm 🔔 Notifications enabled.');
     }
@@ -93,6 +108,7 @@ on('change:graphic', (obj, prev) => {
         const parts = traveler.get('name').split(':').map(p => p.trim());
         const groupName = parts[1] || 'Unknown';
         const nodeId = parseInt(parts[2]) || 0;
+        const mode = (parts[3] || 'ascending').toLowerCase();
 
         // Find and sort all nodes in this group (across all pages)
         const groupNodes = travelers
@@ -111,7 +127,32 @@ on('change:graphic', (obj, prev) => {
             .sort((a, b) => a.id - b.id);
 
         const currentIndex = groupNodes.findIndex(n => n.id === nodeId);
-        const nextIndex = (currentIndex + 1) % groupNodes.length;
+        const total = groupNodes.length;
+        let nextIndex = 0;
+
+        // Determine next node based on mode
+        switch (mode) {
+            case 'descending':
+                nextIndex = (currentIndex - 1 + total) % total;
+                break;
+            case 'random':
+                do {
+                    nextIndex = Math.floor(Math.random() * total);
+                } while (nextIndex === currentIndex);
+                break;
+            case 'odd-even': {
+                const isOdd = nodeId % 2 !== 0;
+                const subset = groupNodes.filter(n => (n.id % 2 !== 0) === isOdd);
+                const currentSubIndex = subset.findIndex(n => n.id === nodeId);
+                const nextSubIndex = (currentSubIndex + 1) % subset.length;
+                const nextNodeId = subset[nextSubIndex].id;
+                nextIndex = groupNodes.findIndex(n => n.id === nextNodeId);
+                break;
+            }
+            default: // ascending
+                nextIndex = (currentIndex + 1) % total;
+        }
+
         const nextNode = groupNodes[nextIndex];
 
         // Apply cooldown immediately
@@ -124,7 +165,7 @@ on('change:graphic', (obj, prev) => {
 
         // Announce both (if notifications on)
         if (state.TokenTraveler.notifications) {
-            sendChat('TokenTraveler', `/w gm ${obj.get('name')} entered ${groupName} (Node ${nodeId})`);
+            sendChat('TokenTraveler', `/w gm ${obj.get('name')} entered ${groupName} (Node ${nodeId}, Mode: ${mode})`);
             sendChat('TokenTraveler', `/w gm ${obj.get('name')} exited ${groupName} (Node ${nextNode.id})`);
         }
 
@@ -148,7 +189,7 @@ on('change:graphic', (obj, prev) => {
             obj.remove();
 
             if (state.TokenTraveler.notifications) {
-                sendChat('TokenTraveler', `/w gm ${clone ? clone.get('name') : obj.get('name')} teleported to a new map (${groupName} Node ${nextNode.id}).`);
+                sendChat('TokenTraveler', `/w gm ${clone ? clone.get('name') : obj.get('name')} teleported to a new map (${groupName} Node ${nextNode.id}, Mode: ${mode}).`);
             }
         } else {
             // Same map — just move the token
@@ -161,6 +202,6 @@ on('change:graphic', (obj, prev) => {
         // Remove cooldown after 1.5 seconds
         setTimeout(() => {
             delete state.TokenTraveler.cooldown[tokenId];
-        }, 1500); //<------------------- change millisecounds here
+        }, 1500);
     });
 });

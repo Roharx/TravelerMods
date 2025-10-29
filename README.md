@@ -119,6 +119,9 @@ Have a suggestion or idea?
 
 ## 🧰 Version History
 
+### **v1.3**
+- Updated teleport messaging to look nicer and easier to read.
+
 ### **v1.2.1**
 - Minor bugfix with circles not being separated properly.
 

@@ -1,5 +1,5 @@
 /**
- * Documentation: TokenTraveler v1.2 Teleportation Circles
+ * Documentation: TokenTraveler v1.2.1 Teleportation Circles
  * 
  * Usage: Place any form of a token on any layer (My recommendation would be GM layer for things that you don't want to be visible
  * but you can use the token layer as well for interactive portals, jump pads, etc.)
@@ -79,7 +79,7 @@
  */
 
 on('ready', () => {
-    log('TokenTraveler v1.2 ready (Teleportation Circles).');
+    log('TokenTraveler v1.2.1 ready (Linked Circles Fix).');
 
     if (!state.TokenTraveler)
         state.TokenTraveler = { cooldown: {}, notifications: true };
@@ -164,9 +164,14 @@ on('change:graphic', (obj, prev) => {
         const total = groupNodes.length;
         let nextNode = null;
 
-        // 🌀 NEW: Teleportation Circle logic
+        // 🌀 NEW: Linked Circle logic
         if (mode === 'circle-entry') {
-            nextNode = groupNodes.find(n => n.mode === 'circle-exit');
+            // Try to find a matching exit with same ID
+            nextNode = groupNodes.find(n => n.id === nodeId && n.mode === 'circle-exit');
+            if (!nextNode) {
+                // fallback: first available exit
+                nextNode = groupNodes.find(n => n.mode === 'circle-exit');
+            }
             if (!nextNode) return sendChat('TokenTraveler', `/w gm ⚠️ No circle-exit found for ${groupName}.`);
         } else if (mode === 'circle-exit') {
             // Exits do nothing
@@ -229,9 +234,7 @@ on('change:graphic', (obj, prev) => {
             cloneData.top = nextNode.obj.get('top');
             cloneData.layer = cloneData.layer || 'objects';
             cloneData.name = cloneData.name && cloneData.name.trim() !== '' ? cloneData.name : obj.get('name') || 'Unnamed Token';
-
-            let img = cloneData.imgsrc || obj.get('imgsrc');            
-            cloneData.imgsrc = img;
+            cloneData.imgsrc = cloneData.imgsrc || obj.get('imgsrc');
 
             const clone = createObj('graphic', cloneData);
             if (clone) {

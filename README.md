@@ -9,7 +9,7 @@ I'm pretty new to the Roll20 modding community, but I hope to share helpful tool
 
 ## ✨ Origin Story
 
-While setting up a new campaign, I wanted a way to **teleport tokens between maps**—but existing solutions were either too complex or lacked the flexibility I needed.  
+While setting up a new campaign, I wanted a way to **teleport tokens between maps**—but existing solutions were a bit too complex for me.  
 
 Since I have some JavaScript experience, I studied the amazing work behind *MapTeleporters* and built my own lightweight, customizable version:  
 **TokenTraveler** — an **automated token teleportation mod** that makes moving tokens between maps or points effortless.

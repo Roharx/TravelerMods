@@ -230,10 +230,7 @@ on('change:graphic', (obj, prev) => {
             cloneData.layer = cloneData.layer || 'objects';
             cloneData.name = cloneData.name && cloneData.name.trim() !== '' ? cloneData.name : obj.get('name') || 'Unnamed Token';
 
-            let img = cloneData.imgsrc || obj.get('imgsrc');
-            if (!img || img.trim() === '') {
-                img = 'https://s3.amazonaws.com/files.d20.io/images/61115538/epRdmM7bpYyFZT9Nw3GJGA/thumb.png?1541801262';
-            }
+            let img = cloneData.imgsrc || obj.get('imgsrc');            
             cloneData.imgsrc = img;
 
             const clone = createObj('graphic', cloneData);

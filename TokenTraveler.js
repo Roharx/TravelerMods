@@ -164,45 +164,44 @@ on('change:graphic', (obj, prev) => {
         const total = groupNodes.length;
         let nextNode = null;
 
-        // Original sequence logic
-        let nextIndex = 0;
-        switch (mode) {
-            case 'descending':
-                nextIndex = (currentIndex - 1 + total) % total;
-                break;
-            case 'random':
-                do {
-                    nextIndex = Math.floor(Math.random() * total);
-                } while (nextIndex === currentIndex);
-                break;
-            case 'odd-even': {
-                const isOdd = nodeId % 2 !== 0;
-                const subset = groupNodes.filter(n => (n.id % 2 !== 0) === isOdd);
-                const currentSubIndex = subset.findIndex(n => n.id === nodeId);
-                const nextSubIndex = (currentSubIndex + 1) % subset.length;
-                const nextNodeId = subset[nextSubIndex].id;
-                nextIndex = groupNodes.findIndex(n => n.id === nextNodeId);
-                break;
+        // 🌀 NEW: Linked Circle logic
+        if (mode === 'circle-entry') {
+            // Try to find a matching exit with same ID
+            nextNode = groupNodes.find(n => n.id === nodeId && n.mode === 'circle-exit');
+            if (!nextNode) {
+                // fallback: first available exit
+                nextNode = groupNodes.find(n => n.mode === 'circle-exit');
             }
-            // 🌀 NEW: Linked Circle logic
-            case 'circle-entry': {
-                // Try to find a matching exit with same ID
-                nextNode = groupNodes.find(n => n.id === nodeId && n.mode === 'circle-exit');
-                if (!nextNode) {
-                    // fallback: first available exit
-                    nextNode = groupNodes.find(n => n.mode === 'circle-exit');
+            if (!nextNode) return sendChat('TokenTraveler', `/w gm ⚠️ No circle-exit found for ${groupName}.`);
+        } else if (mode === 'circle-exit') {
+            // Exits do nothing
+            return;
+        } else {
+            // Original sequence logic
+            let nextIndex = 0;
+            switch (mode) {
+                case 'descending':
+                    nextIndex = (currentIndex - 1 + total) % total;
+                    break;
+                case 'random':
+                    do {
+                        nextIndex = Math.floor(Math.random() * total);
+                    } while (nextIndex === currentIndex);
+                    break;
+                case 'odd-even': {
+                    const isOdd = nodeId % 2 !== 0;
+                    const subset = groupNodes.filter(n => (n.id % 2 !== 0) === isOdd);
+                    const currentSubIndex = subset.findIndex(n => n.id === nodeId);
+                    const nextSubIndex = (currentSubIndex + 1) % subset.length;
+                    const nextNodeId = subset[nextSubIndex].id;
+                    nextIndex = groupNodes.findIndex(n => n.id === nextNodeId);
+                    break;
                 }
-                if (!nextNode) return sendChat('TokenTraveler', `/w gm ⚠️ No circle-exit found for ${groupName}.`);
+                default:
+                    nextIndex = (currentIndex + 1) % total;
             }
-            case 'circle-exit': {
-                // Exits do nothing
-                return;
-            }
-            default:
-                nextIndex = (currentIndex + 1) % total;
+            nextNode = groupNodes[nextIndex];
         }
-        nextNode = groupNodes[nextIndex];
-
 
         if (!nextNode) return;
 
@@ -218,11 +217,11 @@ on('change:graphic', (obj, prev) => {
         if (state.TokenTraveler.notifications) {
             // Messages need to be in 1 line or Roll20 will treat them as a new message, otherwise, I'd split it up into multiple lines
             sendChat('TokenTraveler',
-                `/w gm <br> 🌀 <b style="color:#60A5FA;">${obj.get('name') || 'Unnamed Token'}</b> entered <b>${groupName}</b> <br> <span style="color:#93C5FD;">Node:</span> ${nodeId} | <span style="color:#93C5FD;">Mode:</span> ${mode}`);
+                `/w gm 🌀 <b style="color:#60A5FA;">${obj.get('name') || 'Unnamed Token'}</b> entered <b>${groupName}</b> <br> <span style="color:#93C5FD;">Node:</span> ${nodeId} | <span style="color:#93C5FD;">Mode:</span> ${mode}`);
 
             // Messages need to be in 1 line or Roll20 will treat them as a new message, otherwise, I'd split it up into multiple lines
             sendChat('TokenTraveler',
-                `/w gm <br> 🚪 <b style="color:#FBBF24;">${obj.get('name') || 'Unnamed Token'}</b> exited <b>${groupName}</b> <span style="color:#FCD34D;">Next Node:</span> ${nextNode.id}`);
+                `/w gm 🚪 <b style="color:#FBBF24;">${obj.get('name') || 'Unnamed Token'}</b> exited <b>${groupName}</b> <span style="color:#FCD34D;">Next Node:</span> ${nextNode.id}`);
         }
 
         // Handle cross-map teleport
@@ -253,7 +252,7 @@ on('change:graphic', (obj, prev) => {
                 if (state.TokenTraveler.notifications) {
                     // Messages need to be in 1 line or Roll20 will treat them as a new message, otherwise, I'd split it up into multiple lines
                     sendChat('TokenTraveler',
-                        `/w gm <br> ✨ <b style="color:#C084FC;">${clone.get('name') || '(Unnamed Token)'}</b> teleported to <b style="color:#A78BFA;">${destMapName}</b> <br> <span style="color:#DDD6FE;">${groupName}:</span> <br> <span style="color:#93C5FD;">Node:</span> ${nextNode.id} | <span style="color:#93C5FD;">Mode:</span> ${mode}`);
+                        `/w gm ✨ <b style="color:#C084FC;">${clone.get('name') || '(Unnamed Token)'}</b> teleported to <b style="color:#A78BFA;">${destMapName}</b> <br> <span style="color:#DDD6FE;">${groupName}:</span> <br> <span style="color:#93C5FD;">Node:</span> ${nextNode.id} | <span style="color:#93C5FD;">Mode:</span> ${mode}`);
                 }
             } else {
                 sendChat('TokenTraveler', `/w gm ⚠️ Failed to clone ${obj.get('name') || 'token'} to ${groupName} Node ${nextNode.id}.`);

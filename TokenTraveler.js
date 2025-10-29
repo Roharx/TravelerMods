@@ -1,5 +1,5 @@
 /**
- * Documentation: TokenTraveler v1.1 (cooldown bugfix)
+ * Documentation: TokenTraveler v1.2 Teleportation Circles
  * 
  * Usage: Place any form of a token on any layer (My recommendation would be GM layer for things that you don't want to be visible
  * but you can use the token layer as well for interactive portals, jump pads, etc.)
@@ -47,10 +47,39 @@
  *   random     - teleport to a random node (not self)
  *   odd-even   - 1→3→5→1, 2→4→6→2...
  * 
+ * -----------------------------------------------------------------
+ * 
+ * TokenTraveler v1.2 (Teleportation Circles)
+ * 
+ * Adds support for a new mode:
+ * Traveler:<GroupName>:<NodeId>:circle-entry
+ * Traveler:<GroupName>:<NodeId>:circle-exit
+ * 
+ * Any circle-entry token in a group will teleport directly to that group's circle-exit.
+ * 
+ * Example:
+ *   Traveler:RavengaardCity:1:circle-exit
+ *   Traveler:RavengaardCity:2:circle-entry
+ *   Traveler:RavengaardCity:3:circle-entry
+ * 
+ * Tokens stepping on 2 or 3 will go to 1. Node 1 acts as the anchor and does not teleport out.
+ * 
+ * Note:
+ *   You can never enter a teleportation circle exit.
+ *   You can also use the circles in the following way (not applicable for the other modes):
+ *   Traveler:RavengaardCity:1:circle-exit
+ *   Traveler:RavengaardCity:1:circle-entry
+ *   Traveler:RavengaardCity:1:circle-entry
+ * 
+ * Tokens stepping on any of the 1:circle-entry will be teleported/moved to 1:circle-exit
+ * I made it this way to make sure if you have multiple teleportation circles in a city,
+ * you can keep track of which one to go to.
+ * 
+ * -----------------------------------------------------------------
  */
 
 on('ready', () => {
-    log('TokenTraveler v1.1.1 ready (cooldown bugfix).');
+    log('TokenTraveler v1.2 ready (Teleportation Circles).');
 
     if (!state.TokenTraveler)
         state.TokenTraveler = { cooldown: {}, notifications: true };
@@ -64,7 +93,6 @@ on('ready', () => {
 on('chat:message', (msg) => {
     if (msg.type !== 'api' || !playerIsGM(msg.playerid)) return;
 
-    // Cooldown error message fix
     if (!state.TokenTraveler)
         state.TokenTraveler = { cooldown: {}, notifications: true };
 
@@ -84,7 +112,6 @@ on('chat:message', (msg) => {
 // Main teleportation logic
 // ---------------------------------------------------------------------------
 on('change:graphic', (obj, prev) => {
-    // Cooldown error message fix
     if (!state.TokenTraveler)
         state.TokenTraveler = { cooldown: {}, notifications: true };
 
@@ -119,50 +146,59 @@ on('change:graphic', (obj, prev) => {
         const nodeId = parseInt(parts[2]) || 0;
         const mode = (parts[3] || 'ascending').toLowerCase();
 
-        // Find and sort all nodes in this group (across all pages)
+        // Find all group nodes
         const groupNodes = travelers
-            .filter(t => {
-                const p = t.get('name').split(':').map(x => x.trim());
-                return p[1] === groupName;
-            })
+            .filter(t => (t.get('name') || '').includes(groupName))
             .map(t => {
                 const p = t.get('name').split(':').map(x => x.trim());
                 return {
                     id: parseInt(p[2]) || 0,
                     obj: t,
-                    pageid: t.get('pageid')
+                    pageid: t.get('pageid'),
+                    mode: (p[3] || 'ascending').toLowerCase()
                 };
             })
             .sort((a, b) => a.id - b.id);
 
         const currentIndex = groupNodes.findIndex(n => n.id === nodeId);
         const total = groupNodes.length;
-        let nextIndex = 0;
+        let nextNode = null;
 
-        // Determine next node based on mode
-        switch (mode) {
-            case 'descending':
-                nextIndex = (currentIndex - 1 + total) % total;
-                break;
-            case 'random':
-                do {
-                    nextIndex = Math.floor(Math.random() * total);
-                } while (nextIndex === currentIndex);
-                break;
-            case 'odd-even': {
-                const isOdd = nodeId % 2 !== 0;
-                const subset = groupNodes.filter(n => (n.id % 2 !== 0) === isOdd);
-                const currentSubIndex = subset.findIndex(n => n.id === nodeId);
-                const nextSubIndex = (currentSubIndex + 1) % subset.length;
-                const nextNodeId = subset[nextSubIndex].id;
-                nextIndex = groupNodes.findIndex(n => n.id === nextNodeId);
-                break;
+        // 🌀 NEW: Teleportation Circle logic
+        if (mode === 'circle-entry') {
+            nextNode = groupNodes.find(n => n.mode === 'circle-exit');
+            if (!nextNode) return sendChat('TokenTraveler', `/w gm ⚠️ No circle-exit found for ${groupName}.`);
+        } else if (mode === 'circle-exit') {
+            // Exits do nothing
+            return;
+        } else {
+            // Original sequence logic
+            let nextIndex = 0;
+            switch (mode) {
+                case 'descending':
+                    nextIndex = (currentIndex - 1 + total) % total;
+                    break;
+                case 'random':
+                    do {
+                        nextIndex = Math.floor(Math.random() * total);
+                    } while (nextIndex === currentIndex);
+                    break;
+                case 'odd-even': {
+                    const isOdd = nodeId % 2 !== 0;
+                    const subset = groupNodes.filter(n => (n.id % 2 !== 0) === isOdd);
+                    const currentSubIndex = subset.findIndex(n => n.id === nodeId);
+                    const nextSubIndex = (currentSubIndex + 1) % subset.length;
+                    const nextNodeId = subset[nextSubIndex].id;
+                    nextIndex = groupNodes.findIndex(n => n.id === nextNodeId);
+                    break;
+                }
+                default:
+                    nextIndex = (currentIndex + 1) % total;
             }
-            default: // ascending
-                nextIndex = (currentIndex + 1) % total;
+            nextNode = groupNodes[nextIndex];
         }
 
-        const nextNode = groupNodes[nextIndex];
+        if (!nextNode) return;
 
         // Apply cooldown immediately
         state.TokenTraveler.cooldown[tokenId] = true;
@@ -172,17 +208,15 @@ on('change:graphic', (obj, prev) => {
             setTimeout(() => delete state.TokenTraveler.cooldown[tokenName], 1500);
         }
 
-        // Announce both (if notifications on)
+        // Announce both
         if (state.TokenTraveler.notifications) {
-            sendChat('TokenTraveler', `/w gm ${obj.get('name')} entered ${groupName} (Node ${nodeId}, Mode: ${mode})`);
-            sendChat('TokenTraveler', `/w gm ${obj.get('name')} exited ${groupName} (Node ${nextNode.id})`);
+            sendChat('TokenTraveler', `/w gm ${obj.get('name') || 'Unnamed Token'} entered ${groupName} (Node ${nodeId}, Mode: ${mode})`);
+            sendChat('TokenTraveler', `/w gm ${obj.get('name') || 'Unnamed Token'} exited ${groupName} (Node ${nextNode.id})`);
         }
 
         // Handle cross-map teleport
         if (nextNode.pageid !== pageId) {
             const destPageId = nextNode.pageid;
-
-            // --- FULL CLONE IMPLEMENTATION ---
             const attrs = obj.attributes;
             const cloneData = { _type: 'graphic', _pageid: destPageId };
 
@@ -191,33 +225,34 @@ on('change:graphic', (obj, prev) => {
                 cloneData[key] = attrs[key];
             });
 
-            // Position at destination
             cloneData.left = nextNode.obj.get('left');
             cloneData.top = nextNode.obj.get('top');
+            cloneData.layer = cloneData.layer || 'objects';
+            cloneData.name = cloneData.name && cloneData.name.trim() !== '' ? cloneData.name : obj.get('name') || 'Unnamed Token';
 
-            // If nameless, auto-assign a temporary name
-            if (!cloneData.name || cloneData.name.trim() === '') {
-                cloneData.name = 'Unnamed Token';
+            let img = cloneData.imgsrc || obj.get('imgsrc');
+            if (!img || img.trim() === '') {
+                img = 'https://s3.amazonaws.com/files.d20.io/images/61115538/epRdmM7bpYyFZT9Nw3GJGA/thumb.png?1541801262';
             }
+            cloneData.imgsrc = img;
 
             const clone = createObj('graphic', cloneData);
-            obj.remove();
-
-
-            if (state.TokenTraveler.notifications) {
-                sendChat('TokenTraveler', `/w gm ${clone ? clone.get('name') : obj.get('name')} teleported to a new map (${groupName} Node ${nextNode.id}, Mode: ${mode}).`);
+            if (clone) {
+                obj.remove();
+                if (state.TokenTraveler.notifications) {
+                    sendChat('TokenTraveler', `/w gm ${clone.get('name') || '(Unnamed Token)'} teleported to a new map (${groupName} Node ${nextNode.id}, Mode: ${mode}).`);
+                }
+            } else {
+                sendChat('TokenTraveler', `/w gm ⚠️ Failed to clone ${obj.get('name') || 'token'} to ${groupName} Node ${nextNode.id}.`);
             }
         } else {
-            // Same map — just move the token
             obj.set({
                 left: nextNode.obj.get('left'),
                 top: nextNode.obj.get('top')
             });
         }
 
-        // Remove cooldown after 1.5 seconds
-        setTimeout(() => {
-            delete state.TokenTraveler.cooldown[tokenId];
-        }, 1500);
+        // Remove cooldown
+        setTimeout(() => delete state.TokenTraveler.cooldown[tokenId], 1500);
     });
 });

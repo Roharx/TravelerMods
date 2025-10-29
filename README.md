@@ -113,7 +113,7 @@ These will be automated in future updates.
 - [ ] Further optimizations & QoL improvements  
 
 Have a suggestion or idea?  
-💬 Open an [issue](../../issues) or leave a comment — I’d love to hear your thoughts!
+💬 Open an [issue](../../issues) or leave a [comment](https://app.roll20.net/forum/post/12550698/teleporting-and-moving-tokens-between-preset-points) — I’d love to hear your thoughts!
 
 ---
 

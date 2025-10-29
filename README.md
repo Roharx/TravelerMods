@@ -9,9 +9,9 @@ I'm pretty new to the Roll20 modding community, but I hope to share helpful tool
 
 ## ✨ Origin Story
 
-While setting up a new campaign, I wanted a way to **teleport tokens between maps**—but existing solutions were either too complex or lacked the flexibility I needed.  
+While setting up a new campaign, I wanted a way to **teleport tokens between maps**—but existing solutions were a bit too complex for me.  
 
-Since I have some JavaScript experience, I studied the amazing work behind *MapTeleporters* and built my own lightweight, customizable version:  
+Since I have some JavaScript experience, I studied the amazing work behind *[MapTeleporters](https://gist.github.com/finalfrog/124f67ad84204546caf16fffd84115e4)* and built my own lightweight, customizable version:  
 **TokenTraveler** — an **automated token teleportation mod** that makes moving tokens between maps or points effortless.
 
 ---
@@ -106,14 +106,14 @@ These will be automated in future updates.
 
 ## 🧭 Planned Updates
 
-- [x] Add sequence pattern system ✅  
-- [x] Multiple entry points to one endpoint (like a teleportation circle) ✅
+- [x] Add sequence pattern system
+- [x] Multiple entry points to one endpoint (like a teleportation circle)
 - [ ] Multiple selectable endpoints from one entry point  
 - [ ] Optional **sound effects** during teleportation  
 - [ ] Further optimizations & QoL improvements  
 
 Have a suggestion or idea?  
-💬 Open an [issue](../../issues) or leave a comment — I’d love to hear your thoughts!
+💬 Open an [issue](../../issues) or leave a [comment](https://app.roll20.net/forum/post/12550698/teleporting-and-moving-tokens-between-preset-points) — I’d love to hear your thoughts!
 
 ---
 

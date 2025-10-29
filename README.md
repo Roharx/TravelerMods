@@ -106,8 +106,8 @@ These will be automated in future updates.
 
 ## 🧭 Planned Updates
 
-- [x] Add sequence pattern system ✅  
-- [x] Multiple entry points to one endpoint (like a teleportation circle) ✅
+- [x] Add sequence pattern system
+- [x] Multiple entry points to one endpoint (like a teleportation circle)
 - [ ] Multiple selectable endpoints from one entry point  
 - [ ] Optional **sound effects** during teleportation  
 - [ ] Further optimizations & QoL improvements  

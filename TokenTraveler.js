@@ -1,5 +1,5 @@
 /**
- * Documentation: TokenTraveler v1.3 Better Messages
+ * Documentation: TokenTraveler v1.3.1 Code Cleanup
  * 
  * Usage: Place any form of a token on any layer (My recommendation would be GM layer for things that you don't want to be visible
  * but you can use the token layer as well for interactive portals, jump pads, etc.)
@@ -78,35 +78,123 @@
  * -----------------------------------------------------------------
  */
 
-on('ready', () => {
-    log('TokenTraveler v1.3 ready (Better Messages).');
+function initializeState() {
+    state.TokenTraveler = state.TokenTraveler || {};
+    state.TokenTraveler.cooldown = state.TokenTraveler.cooldown || {};
+    state.TokenTraveler.notifications = state.TokenTraveler.notifications ?? true;
+}
 
-    if (!state.TokenTraveler)
-        state.TokenTraveler = { cooldown: {}, notifications: true };
-    if (state.TokenTraveler.notifications === undefined)
-        state.TokenTraveler.notifications = true;
+on('ready', () => {
+    log('🧭 TokenTraveler v1.3.1 initialized.');
+    initializeState();
 });
+
+
+// ---------------------------------------------------------------------------
+// Helper: Unified format for sending teleport messages to the GM
+// ---------------------------------------------------------------------------
+function notifyGM(icon, color, name, group, extra = '', highlight = '') {
+    const safeHighlight = highlight.replace(/(\r\n|\n|\r)/gm, ' ');
+    sendChat('TokenTraveler',
+        `/w gm <br>${icon} <b style="color:${color};">${name}</b> <br>${extra} <b>${group}</b>${safeHighlight ? ' ' + safeHighlight : ''}`);
+}
 
 // ---------------------------------------------------------------------------
 // Chat command handler
 // ---------------------------------------------------------------------------
+function setNotifications(enabled) {
+    state.TokenTraveler.notifications = enabled;
+    const msg = enabled ? '🔔 Notifications enabled.' : '🔕 Notifications disabled.';
+    sendChat('TokenTraveler', `/w gm ${msg}`);
+}
+
 on('chat:message', (msg) => {
     if (msg.type !== 'api' || !playerIsGM(msg.playerid)) return;
+    initializeState();
 
-    if (!state.TokenTraveler)
-        state.TokenTraveler = { cooldown: {}, notifications: true };
+    const [command, ...args] = msg.content.split(/\s+/);
+    if (command !== '!TokenTraveler') return;
 
-    const args = msg.content.split(/\s+/);
-    if (args[0] !== '!TokenTraveler') return;
-
-    if (args.includes('--notification-off')) {
-        state.TokenTraveler.notifications = false;
-        sendChat('TokenTraveler', '/w gm 📴 Notifications disabled.');
-    } else if (args.includes('--notification-on')) {
-        state.TokenTraveler.notifications = true;
-        sendChat('TokenTraveler', '/w gm 🔔 Notifications enabled.');
-    }
+    if (args.includes('--notification-on')) setNotifications(true);
+    if (args.includes('--notification-off')) setNotifications(false);
 });
+
+// ---------------------------------------------------------------------------
+// Cooldown handlers
+// ---------------------------------------------------------------------------
+function applyCooldown(id, name, duration = 1500) {
+    state.TokenTraveler.cooldown[id] = true;
+    if (name) state.TokenTraveler.cooldown[name] = true;
+    setTimeout(() => {
+        delete state.TokenTraveler.cooldown[id];
+        if (name) delete state.TokenTraveler.cooldown[name];
+    }, duration);
+}
+
+function hasCooldown(id, name) {
+    return state.TokenTraveler.cooldown[id] || (name && state.TokenTraveler.cooldown[name]);
+}
+
+// ---------------------------------------------------------------------------
+// Traveler name parser
+// ---------------------------------------------------------------------------
+function parseTravelerName(name) {
+    const parts = (name || '').split(':').map(p => p.trim());
+    return {
+        isTraveler: parts[0] === 'Traveler',
+        groupName: parts[1] || 'Unknown',
+        nodeId: parseInt(parts[2]) || 0,
+        mode: (parts[3] || 'ascending').toLowerCase()
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Traveler node logic (determines which sequence to use)
+// ---------------------------------------------------------------------------
+function getNextNode(groupNodes, currentIndex, mode, nodeId, total) {
+    switch (mode) {
+        case 'circle-entry': {
+            return groupNodes.find(n => n.id === nodeId && n.mode === 'circle-exit') ||
+                groupNodes.find(n => n.mode === 'circle-exit');
+        }
+        case 'circle-exit': return null;
+        case 'descending': return groupNodes[(currentIndex - 1 + total) % total];
+        case 'random': {
+            let idx;
+            do idx = Math.floor(Math.random() * total);
+            while (idx === currentIndex);
+            return groupNodes[idx];
+        }
+        case 'odd-even': {
+            const isOdd = nodeId % 2 !== 0;
+            const subset = groupNodes.filter(n => (n.id % 2 !== 0) === isOdd);
+            const nextId = subset[(subset.findIndex(n => n.id === nodeId) + 1) % subset.length].id;
+            return groupNodes.find(n => n.id === nextId);
+        }
+        default:
+            return groupNodes[(currentIndex + 1) % total];
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Token Cloning Logic
+// ---------------------------------------------------------------------------
+function cloneTokenToPage(obj, destPageId, x, y) {
+    const attrs = obj.attributes;
+    const cloneData = { _type: 'graphic', _pageid: destPageId };
+
+    Object.keys(attrs).forEach(key => {
+        if (['_id', '_type', '_pageid', '_zorder'].includes(key)) return;
+        cloneData[key] = attrs[key];
+    });
+
+    cloneData.left = x;
+    cloneData.top = y;
+    cloneData.layer = cloneData.layer || 'objects';
+    cloneData.name = cloneData.name?.trim() || obj.get('name') || 'Unnamed Token';
+    cloneData.imgsrc = cloneData.imgsrc || obj.get('imgsrc');
+    return createObj('graphic', cloneData);
+}
 
 // ---------------------------------------------------------------------------
 // Main teleportation logic
@@ -119,8 +207,9 @@ on('change:graphic', (obj, prev) => {
     if ((obj.get('name') || '').startsWith('Traveler:')) return;
 
     const tokenId = obj.id;
-    if (state.TokenTraveler.cooldown[tokenId] ||
-        state.TokenTraveler.cooldown[obj.get('name')]) return;
+    if (hasCooldown(tokenId, obj.get('name'))) return;
+
+    const tokenName = obj.get('name') || 'Unnamed Token';
 
     const pageId = obj.get('pageid');
     const travelers = findObjs({ _type: 'graphic' })
@@ -141,10 +230,7 @@ on('change:graphic', (obj, prev) => {
         const inY = tokenY > (tTop - tH / 2) && tokenY < (tTop + tH / 2);
         if (!(inX && inY)) return;
 
-        const parts = traveler.get('name').split(':').map(p => p.trim());
-        const groupName = parts[1] || 'Unknown';
-        const nodeId = parseInt(parts[2]) || 0;
-        const mode = (parts[3] || 'ascending').toLowerCase();
+        const { groupName, nodeId, mode } = parseTravelerName(traveler.get('name'));
 
         // Find all group nodes
         const groupNodes = travelers
@@ -162,100 +248,52 @@ on('change:graphic', (obj, prev) => {
 
         const currentIndex = groupNodes.findIndex(n => n.id === nodeId);
         const total = groupNodes.length;
-        let nextNode = null;
 
-        // 🌀 NEW: Linked Circle logic
-        if (mode === 'circle-entry') {
-            // Try to find a matching exit with same ID
-            nextNode = groupNodes.find(n => n.id === nodeId && n.mode === 'circle-exit');
-            if (!nextNode) {
-                // fallback: first available exit
-                nextNode = groupNodes.find(n => n.mode === 'circle-exit');
-            }
-            if (!nextNode) return sendChat('TokenTraveler', `/w gm ⚠️ No circle-exit found for ${groupName}.`);
-        } else if (mode === 'circle-exit') {
-            // Exits do nothing
+        // Original sequence logic
+        const nextNode = getNextNode(groupNodes, currentIndex, mode, nodeId, total);
+        if (!nextNode) {
+            if (mode === 'circle-entry')
+                sendChat('TokenTraveler', `/w gm ⚠️ No circle-exit found for ${groupName}.`);
             return;
-        } else {
-            // Original sequence logic
-            let nextIndex = 0;
-            switch (mode) {
-                case 'descending':
-                    nextIndex = (currentIndex - 1 + total) % total;
-                    break;
-                case 'random':
-                    do {
-                        nextIndex = Math.floor(Math.random() * total);
-                    } while (nextIndex === currentIndex);
-                    break;
-                case 'odd-even': {
-                    const isOdd = nodeId % 2 !== 0;
-                    const subset = groupNodes.filter(n => (n.id % 2 !== 0) === isOdd);
-                    const currentSubIndex = subset.findIndex(n => n.id === nodeId);
-                    const nextSubIndex = (currentSubIndex + 1) % subset.length;
-                    const nextNodeId = subset[nextSubIndex].id;
-                    nextIndex = groupNodes.findIndex(n => n.id === nextNodeId);
-                    break;
-                }
-                default:
-                    nextIndex = (currentIndex + 1) % total;
-            }
-            nextNode = groupNodes[nextIndex];
         }
-
-        if (!nextNode) return;
 
         // Apply cooldown immediately
-        state.TokenTraveler.cooldown[tokenId] = true;
-        const tokenName = obj.get('name');
-        if (tokenName) {
-            state.TokenTraveler.cooldown[tokenName] = true;
-            setTimeout(() => delete state.TokenTraveler.cooldown[tokenName], 1500);
-        }
+        applyCooldown(tokenId, obj.get('name'));
 
         // Announce both
         if (state.TokenTraveler.notifications) {
-            // Messages need to be in 1 line or Roll20 will treat them as a new message, otherwise, I'd split it up into multiple lines
-            sendChat('TokenTraveler',
-                `/w gm 🌀 <b style="color:#60A5FA;">${obj.get('name') || 'Unnamed Token'}</b> entered <b>${groupName}</b> <br> <span style="color:#93C5FD;">Node:</span> ${nodeId} | <span style="color:#93C5FD;">Mode:</span> ${mode}`);
+            notifyGM('🌀', '#60A5FA', tokenName, groupName,
+                'Entered', `<br><span style="color:#93C5FD;">Node:</span> ${nodeId} | <span style="color:#93C5FD;">Mode:</span> ${mode}`);
 
-            // Messages need to be in 1 line or Roll20 will treat them as a new message, otherwise, I'd split it up into multiple lines
-            sendChat('TokenTraveler',
-                `/w gm 🚪 <b style="color:#FBBF24;">${obj.get('name') || 'Unnamed Token'}</b> exited <b>${groupName}</b> <span style="color:#FCD34D;">Next Node:</span> ${nextNode.id}`);
+            notifyGM('🚪', '#FBBF24', tokenName, groupName,
+                'Exited', `<br><span style="color:#FCD34D;">Next Node:</span> ${nextNode.id}`);
         }
 
         // Handle cross-map teleport
         if (nextNode.pageid !== pageId) {
-            const destPageId = nextNode.pageid;
-            const attrs = obj.attributes;
-            const cloneData = { _type: 'graphic', _pageid: destPageId };
+            const clone = cloneTokenToPage(
+                obj,
+                nextNode.pageid,
+                nextNode.obj.get('left'),
+                nextNode.obj.get('top')
+            );
 
-            Object.keys(attrs).forEach(key => {
-                if (['_id', '_type', '_pageid', '_zorder'].includes(key)) return;
-                cloneData[key] = attrs[key];
-            });
-
-            cloneData.left = nextNode.obj.get('left');
-            cloneData.top = nextNode.obj.get('top');
-            cloneData.layer = cloneData.layer || 'objects';
-            cloneData.name = cloneData.name && cloneData.name.trim() !== '' ? cloneData.name : obj.get('name') || 'Unnamed Token';
-            cloneData.imgsrc = cloneData.imgsrc || obj.get('imgsrc');
-
-            const clone = createObj('graphic', cloneData);
             if (clone) {
                 obj.remove();
 
-                // Get the name of the destination map
-                const destPage = getObj('page', destPageId);
+                const destPage = getObj('page', nextNode.pageid);
                 const destMapName = destPage ? destPage.get('name') : '(Unknown Map)';
 
                 if (state.TokenTraveler.notifications) {
-                    // Messages need to be in 1 line or Roll20 will treat them as a new message, otherwise, I'd split it up into multiple lines
-                    sendChat('TokenTraveler',
-                        `/w gm ✨ <b style="color:#C084FC;">${clone.get('name') || '(Unnamed Token)'}</b> teleported to <b style="color:#A78BFA;">${destMapName}</b> <br> <span style="color:#DDD6FE;">${groupName}:</span> <br> <span style="color:#93C5FD;">Node:</span> ${nextNode.id} | <span style="color:#93C5FD;">Mode:</span> ${mode}`);
+                    notifyGM('✨', '#C084FC', tokenName, destMapName,
+                        'Teleported to',
+                        `<br><span style="color:#DDD6FE;">${groupName}:</span>
+                        <br><span style="color:#93C5FD;">Node:</span> ${nextNode.id} |
+                        <span style="color:#93C5FD;">Mode:</span> ${mode}`);
                 }
             } else {
-                sendChat('TokenTraveler', `/w gm ⚠️ Failed to clone ${obj.get('name') || 'token'} to ${groupName} Node ${nextNode.id}.`);
+                sendChat('TokenTraveler',
+                    `/w gm ⚠️ Failed to clone ${tokenName} to ${groupName} Node ${nextNode.id}.`);
             }
         } else {
             obj.set({
@@ -263,8 +301,5 @@ on('change:graphic', (obj, prev) => {
                 top: nextNode.obj.get('top')
             });
         }
-
-        // Remove cooldown
-        setTimeout(() => delete state.TokenTraveler.cooldown[tokenId], 1500);
     });
 });

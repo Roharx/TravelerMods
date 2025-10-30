@@ -1,4 +1,4 @@
-# TokenTraveler v1.2.1
+# TokenTraveler v1.3.1
 
 **Automated Token Moving/Teleportation System for Roll20**
 
@@ -118,6 +118,9 @@ Have a suggestion or idea?
 ---
 
 ## 🧰 Version History
+
+### **v1.3.1**
+- Code cleanup to make it easier to re-use components, more readable, etc.
 
 ### **v1.3**
 - Updated teleport messaging to look nicer and easier to read.

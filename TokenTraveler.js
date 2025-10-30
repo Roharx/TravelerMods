@@ -1,5 +1,5 @@
 /**
- * Documentation: TokenTraveler v1.3.1 Code Cleanup
+ * Documentation: TokenTraveler v1.4 Camera Follow
  * 
  * Usage: Place any form of a token on any layer (My recommendation would be GM layer for things that you don't want to be visible
  * but you can use the token layer as well for interactive portals, jump pads, etc.)
@@ -76,6 +76,21 @@
  * you can keep track of which one to go to.
  * 
  * -----------------------------------------------------------------
+ * 
+ * TokenTraveler v1.3 (Better Messaging)
+ *  Updated teleport messaging to look nicer and easier to read.
+ * 
+ * TokenTraveler v1.3.1 (Better Messaging)
+ *  Code cleanup to make it easier to re-use components, more readable, etc.
+ * 
+ * -----------------------------------------------------------------
+ * 
+ * TokenTraveler v1.4 (Camera Follow)
+ *  The player camera now follows the token both on the same map and on different maps
+ *  Requirement for this to happen: In the controlled by field, you need to select the player who controls the token
+ * 
+ *  Notes: The GM map will not follow/change unless the GM joins as a player, I wasn't sure if it would be a requirement,
+ *  but for me it seemed more logical to leave the GM camera on the same map with the possible other players.
  */
 
 function initializeState() {
@@ -85,7 +100,7 @@ function initializeState() {
 }
 
 on('ready', () => {
-    log('🧭 TokenTraveler v1.3.1 initialized.');
+    log('🧭 TokenTraveler v1.4 initialized.');
     initializeState();
 });
 
@@ -197,6 +212,111 @@ function cloneTokenToPage(obj, destPageId, x, y) {
 }
 
 // ---------------------------------------------------------------------------
+// Camera follows the token function collection
+// ---------------------------------------------------------------------------
+function getTokenControllerInfo(token) {
+    let controllerIds = [];
+
+    const add = val => {
+        if (val && val.trim() !== '') controllerIds.push(...val.split(',').map(id => id.trim()));
+    };
+
+    add(token.get('controlledby'));
+
+    const charId = token.get('represents');
+    if (charId) {
+        const char = getObj('character', charId);
+        if (char) add(char.get('controlledby'));
+    }
+
+    return [...new Set(controllerIds)];
+}
+
+// this is for same-map movement only
+function panPlayerCameraToToken(token) {
+    const controllerInfo = [];
+    let controllerIds = [];
+
+    const directControl = token.get('controlledby');
+    if (directControl && directControl.trim() !== '') {
+        controllerIds = directControl.split(',').map(id => id.trim());
+    }
+
+    const charId = token.get('represents');
+    if (charId) {
+        const character = getObj('character', charId);
+        if (character) {
+            const charControl = character.get('controlledby');
+            if (charControl && charControl.trim() !== '') {
+                controllerIds.push(...charControl.split(',').map(id => id.trim()));
+            }
+        }
+    }
+
+    controllerIds = [...new Set(controllerIds)];
+    if (controllerIds.length === 0) return;
+
+    const x = token.get('left');
+    const y = token.get('top');
+    const pageId = token.get('pageid');
+
+    // Ping the token’s new location for each controller
+    controllerIds.forEach(pid => {
+        sendPing(x, y, pageId, pid, true); // true = move player camera
+    });
+}
+
+function movePlayerToPageAndFocus(token, destPageId, destX, destY) {
+    let controllerIds = [];
+
+    // Gather controller IDs (token + character)
+    const directControl = token.get('controlledby');
+    if (directControl && directControl.trim() !== '') {
+        controllerIds = directControl.split(',').map(id => id.trim());
+    }
+
+    const charId = token.get('represents');
+    if (charId) {
+        const character = getObj('character', charId);
+        if (character) {
+            const charControl = character.get('controlledby');
+            if (charControl && charControl.trim() !== '') {
+                controllerIds.push(...charControl.split(',').map(id => id.trim()));
+            }
+        }
+    }
+
+    controllerIds = [...new Set(controllerIds)];
+    if (controllerIds.length === 0) return;
+
+    const groupPageId = Campaign().get("playerpageid");
+    let playerPages = Campaign().get("playerspecificpages") || {};
+
+    controllerIds.forEach(pid => {
+        // Phase 1: force Roll20 to notice a change
+        let tempPages = { ...playerPages };
+        tempPages[pid] = token.get("pageid");
+        Campaign().set("playerspecificpages", tempPages);
+
+        // Phase 2: apply real destination after short delay
+        setTimeout(() => {
+            let newPages = Campaign().get("playerspecificpages") || {};
+            if (destPageId === groupPageId) {
+                delete newPages[pid];
+            } else {
+                newPages[pid] = destPageId;
+            }
+            Campaign().set("playerspecificpages", newPages);
+
+            // Phase 3: focus player camera
+            setTimeout(() => {
+                sendPing(destX, destY, destPageId, pid, true);
+            }, 600);
+        }, 600);
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Main teleportation logic
 // ---------------------------------------------------------------------------
 on('change:graphic', (obj, prev) => {
@@ -290,6 +410,9 @@ on('change:graphic', (obj, prev) => {
                         `<br><span style="color:#DDD6FE;">${groupName}:</span>
                         <br><span style="color:#93C5FD;">Node:</span> ${nextNode.id} |
                         <span style="color:#93C5FD;">Mode:</span> ${mode}`);
+
+                    // Move player to the new page and focus camera
+                    movePlayerToPageAndFocus(clone, nextNode.pageid, nextNode.obj.get('left'), nextNode.obj.get('top'));
                 }
             } else {
                 sendChat('TokenTraveler',
@@ -300,6 +423,7 @@ on('change:graphic', (obj, prev) => {
                 left: nextNode.obj.get('left'),
                 top: nextNode.obj.get('top')
             });
+            panPlayerCameraToToken(obj);
         }
     });
 });

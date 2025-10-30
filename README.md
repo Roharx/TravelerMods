@@ -119,6 +119,11 @@ Have a suggestion or idea?
 
 ## 🧰 Version History
 
+### **v1.4**
+- Camera now follows the player tokens both on the same map and across different maps.
+  - Requirement: Controlled by field (Token Settings > Details) must have a player in it.
+  - Notes: The GM map will not change to make sure they stay with the rest of the players.
+
 ### **v1.3.1**
 - Code cleanup to make it easier to re-use components, more readable, etc.
 

@@ -93,6 +93,14 @@
  *  but for me it seemed more logical to leave the GM camera on the same map with the possible other players.
  */
 
+/**
+ * TokenTraveler v1.4 – Camera Follow (Scoped)
+ * Full version with wrapped, per-player camera pings
+ */
+
+// ---------------------------------------------------------------------------
+// State init
+// ---------------------------------------------------------------------------
 function initializeState() {
     state.TokenTraveler = state.TokenTraveler || {};
     state.TokenTraveler.cooldown = state.TokenTraveler.cooldown || {};
@@ -104,23 +112,26 @@ on('ready', () => {
     initializeState();
 });
 
-
 // ---------------------------------------------------------------------------
-// Helper: Unified format for sending teleport messages to the GM
+// GM Notifications
 // ---------------------------------------------------------------------------
 function notifyGM(icon, color, name, group, extra = '', highlight = '') {
     const safeHighlight = highlight.replace(/(\r\n|\n|\r)/gm, ' ');
-    sendChat('TokenTraveler',
-        `/w gm <br>${icon} <b style="color:${color};">${name}</b> <br>${extra} <b>${group}</b>${safeHighlight ? ' ' + safeHighlight : ''}`);
+    sendChat(
+        'TokenTraveler',
+        `/w gm <br>${icon} <b style="color:${color};">${name}</b> <br>${extra} <b>${group}</b>${safeHighlight ? ' ' + safeHighlight : ''}`
+    );
 }
 
 // ---------------------------------------------------------------------------
-// Chat command handler
+// Chat Commands
 // ---------------------------------------------------------------------------
 function setNotifications(enabled) {
     state.TokenTraveler.notifications = enabled;
-    const msg = enabled ? '🔔 Notifications enabled.' : '🔕 Notifications disabled.';
-    sendChat('TokenTraveler', `/w gm ${msg}`);
+    sendChat(
+        'TokenTraveler',
+        `/w gm ${enabled ? '🔔 Notifications enabled.' : '🔕 Notifications disabled.'}`
+    );
 }
 
 on('chat:message', (msg) => {
@@ -135,7 +146,7 @@ on('chat:message', (msg) => {
 });
 
 // ---------------------------------------------------------------------------
-// Cooldown handlers
+// Cooldown Handling
 // ---------------------------------------------------------------------------
 function applyCooldown(id, name, duration = 1500) {
     state.TokenTraveler.cooldown[id] = true;
@@ -151,7 +162,7 @@ function hasCooldown(id, name) {
 }
 
 // ---------------------------------------------------------------------------
-// Traveler name parser
+// Traveler Name Parser
 // ---------------------------------------------------------------------------
 function parseTravelerName(name) {
     const parts = (name || '').split(':').map(p => p.trim());
@@ -164,16 +175,19 @@ function parseTravelerName(name) {
 }
 
 // ---------------------------------------------------------------------------
-// Traveler node logic (determines which sequence to use)
+// Sequence Logic
 // ---------------------------------------------------------------------------
 function getNextNode(groupNodes, currentIndex, mode, nodeId, total) {
     switch (mode) {
-        case 'circle-entry': {
-            return groupNodes.find(n => n.id === nodeId && n.mode === 'circle-exit') ||
-                groupNodes.find(n => n.mode === 'circle-exit');
-        }
-        case 'circle-exit': return null;
-        case 'descending': return groupNodes[(currentIndex - 1 + total) % total];
+        case 'circle-entry':
+            return (
+                groupNodes.find(n => n.id === nodeId && n.mode === 'circle-exit') ||
+                groupNodes.find(n => n.mode === 'circle-exit')
+            );
+        case 'circle-exit':
+            return null;
+        case 'descending':
+            return groupNodes[(currentIndex - 1 + total) % total];
         case 'random': {
             let idx;
             do idx = Math.floor(Math.random() * total);
@@ -183,8 +197,8 @@ function getNextNode(groupNodes, currentIndex, mode, nodeId, total) {
         case 'odd-even': {
             const isOdd = nodeId % 2 !== 0;
             const subset = groupNodes.filter(n => (n.id % 2 !== 0) === isOdd);
-            const nextId = subset[(subset.findIndex(n => n.id === nodeId) + 1) % subset.length].id;
-            return groupNodes.find(n => n.id === nextId);
+            const next = subset[(subset.findIndex(n => n.id === nodeId) + 1) % subset.length];
+            return groupNodes.find(n => n.id === next.id);
         }
         default:
             return groupNodes[(currentIndex + 1) % total];
@@ -192,7 +206,7 @@ function getNextNode(groupNodes, currentIndex, mode, nodeId, total) {
 }
 
 // ---------------------------------------------------------------------------
-// Token Cloning Logic
+// Token Cloning
 // ---------------------------------------------------------------------------
 function cloneTokenToPage(obj, destPageId, x, y) {
     const attrs = obj.attributes;
@@ -208,17 +222,18 @@ function cloneTokenToPage(obj, destPageId, x, y) {
     cloneData.layer = cloneData.layer || 'objects';
     cloneData.name = cloneData.name?.trim() || obj.get('name') || 'Unnamed Token';
     cloneData.imgsrc = cloneData.imgsrc || obj.get('imgsrc');
+
     return createObj('graphic', cloneData);
 }
 
 // ---------------------------------------------------------------------------
-// Camera follows the token function collection
+// Controller Resolution
 // ---------------------------------------------------------------------------
-function getTokenControllerInfo(token) {
-    let controllerIds = [];
+function getTokenControllerIds(token) {
+    let ids = [];
 
     const add = val => {
-        if (val && val.trim() !== '') controllerIds.push(...val.split(',').map(id => id.trim()));
+        if (val && val.trim()) ids.push(...val.split(',').map(v => v.trim()));
     };
 
     add(token.get('controlledby'));
@@ -229,130 +244,88 @@ function getTokenControllerInfo(token) {
         if (char) add(char.get('controlledby'));
     }
 
-    return [...new Set(controllerIds)];
+    return [...new Set(ids)];
 }
 
-// this is for same-map movement only
+// ---------------------------------------------------------------------------
+// 🆕 Camera Utilities (WRAPPED PING)
+// ---------------------------------------------------------------------------
+function focusPlayerCamera(playerId, pageId, x, y) {
+    sendPing(x, y, pageId, playerId, false); // 🔒 scoped ping
+}
+
+// Same-map camera follow
 function panPlayerCameraToToken(token) {
-    const controllerInfo = [];
-    let controllerIds = [];
-
-    const directControl = token.get('controlledby');
-    if (directControl && directControl.trim() !== '') {
-        controllerIds = directControl.split(',').map(id => id.trim());
-    }
-
-    const charId = token.get('represents');
-    if (charId) {
-        const character = getObj('character', charId);
-        if (character) {
-            const charControl = character.get('controlledby');
-            if (charControl && charControl.trim() !== '') {
-                controllerIds.push(...charControl.split(',').map(id => id.trim()));
-            }
-        }
-    }
-
-    controllerIds = [...new Set(controllerIds)];
-    if (controllerIds.length === 0) return;
+    const controllers = getTokenControllerIds(token);
+    if (!controllers.length) return;
 
     const x = token.get('left');
     const y = token.get('top');
     const pageId = token.get('pageid');
 
-    // Ping the token’s new location for each controller
-    controllerIds.forEach(pid => {
-        sendPing(x, y, pageId, pid, true); // true = move player camera
+    controllers.forEach(pid => {
+        focusPlayerCamera(pid, pageId, x, y);
     });
 }
 
+// Cross-map teleport camera follow
 function movePlayerToPageAndFocus(token, destPageId, destX, destY) {
-    let controllerIds = [];
+    const controllers = getTokenControllerIds(token);
+    if (!controllers.length) return;
 
-    // Gather controller IDs (token + character)
-    const directControl = token.get('controlledby');
-    if (directControl && directControl.trim() !== '') {
-        controllerIds = directControl.split(',').map(id => id.trim());
-    }
+    const groupPageId = Campaign().get('playerpageid');
+    let playerPages = Campaign().get('playerspecificpages') || {};
 
-    const charId = token.get('represents');
-    if (charId) {
-        const character = getObj('character', charId);
-        if (character) {
-            const charControl = character.get('controlledby');
-            if (charControl && charControl.trim() !== '') {
-                controllerIds.push(...charControl.split(',').map(id => id.trim()));
-            }
-        }
-    }
-
-    controllerIds = [...new Set(controllerIds)];
-    if (controllerIds.length === 0) return;
-
-    const groupPageId = Campaign().get("playerpageid");
-    let playerPages = Campaign().get("playerspecificpages") || {};
-
-    controllerIds.forEach(pid => {
-        // Phase 1: force Roll20 to notice a change
+    controllers.forEach(pid => {
         let tempPages = { ...playerPages };
-        tempPages[pid] = token.get("pageid");
-        Campaign().set("playerspecificpages", tempPages);
+        tempPages[pid] = token.get('pageid');
+        Campaign().set('playerspecificpages', tempPages);
 
-        // Phase 2: apply real destination after short delay
         setTimeout(() => {
-            let newPages = Campaign().get("playerspecificpages") || {};
+            let newPages = Campaign().get('playerspecificpages') || {};
             if (destPageId === groupPageId) {
                 delete newPages[pid];
             } else {
                 newPages[pid] = destPageId;
             }
-            Campaign().set("playerspecificpages", newPages);
+            Campaign().set('playerspecificpages', newPages);
 
-            // Phase 3: focus player camera
             setTimeout(() => {
-                sendPing(destX, destY, destPageId, pid, true);
+                focusPlayerCamera(pid, destPageId, destX, destY);
             }, 600);
         }, 600);
     });
 }
 
 // ---------------------------------------------------------------------------
-// Main teleportation logic
+// Main Teleport Logic
 // ---------------------------------------------------------------------------
-on('change:graphic', (obj, prev) => {
-    if (!state.TokenTraveler)
-        state.TokenTraveler = { cooldown: {}, notifications: true };
+on('change:graphic', (obj) => {
+    initializeState();
 
     if (obj.get('subtype') !== 'token') return;
     if ((obj.get('name') || '').startsWith('Traveler:')) return;
 
-    const tokenId = obj.id;
-    if (hasCooldown(tokenId, obj.get('name'))) return;
+    if (hasCooldown(obj.id, obj.get('name'))) return;
 
-    const tokenName = obj.get('name') || 'Unnamed Token';
-
-    const pageId = obj.get('pageid');
     const travelers = findObjs({ _type: 'graphic' })
         .filter(g => (g.get('name') || '').startsWith('Traveler:'));
 
     const tokenX = obj.get('left');
     const tokenY = obj.get('top');
+    const pageId = obj.get('pageid');
 
     travelers.forEach(traveler => {
-        const tLeft = traveler.get('left');
-        const tTop = traveler.get('top');
-        const tW = traveler.get('width');
-        const tH = traveler.get('height');
-        const tPageId = traveler.get('pageid');
-        if (tPageId !== pageId) return;
+        if (traveler.get('pageid') !== pageId) return;
 
-        const inX = tokenX > (tLeft - tW / 2) && tokenX < (tLeft + tW / 2);
-        const inY = tokenY > (tTop - tH / 2) && tokenY < (tTop + tH / 2);
-        if (!(inX && inY)) return;
+        const inX = tokenX > (traveler.get('left') - traveler.get('width') / 2) &&
+                    tokenX < (traveler.get('left') + traveler.get('width') / 2);
+        const inY = tokenY > (traveler.get('top') - traveler.get('height') / 2) &&
+                    tokenY < (traveler.get('top') + traveler.get('height') / 2);
+        if (!inX || !inY) return;
 
         const { groupName, nodeId, mode } = parseTravelerName(traveler.get('name'));
 
-        // Find all group nodes
         const groupNodes = travelers
             .filter(t => (t.get('name') || '').includes(groupName))
             .map(t => {
@@ -367,29 +340,11 @@ on('change:graphic', (obj, prev) => {
             .sort((a, b) => a.id - b.id);
 
         const currentIndex = groupNodes.findIndex(n => n.id === nodeId);
-        const total = groupNodes.length;
+        const nextNode = getNextNode(groupNodes, currentIndex, mode, nodeId, groupNodes.length);
+        if (!nextNode) return;
 
-        // Original sequence logic
-        const nextNode = getNextNode(groupNodes, currentIndex, mode, nodeId, total);
-        if (!nextNode) {
-            if (mode === 'circle-entry')
-                sendChat('TokenTraveler', `/w gm ⚠️ No circle-exit found for ${groupName}.`);
-            return;
-        }
+        applyCooldown(obj.id, obj.get('name'));
 
-        // Apply cooldown immediately
-        applyCooldown(tokenId, obj.get('name'));
-
-        // Announce both
-        if (state.TokenTraveler.notifications) {
-            notifyGM('🌀', '#60A5FA', tokenName, groupName,
-                'Entered', `<br><span style="color:#93C5FD;">Node:</span> ${nodeId} | <span style="color:#93C5FD;">Mode:</span> ${mode}`);
-
-            notifyGM('🚪', '#FBBF24', tokenName, groupName,
-                'Exited', `<br><span style="color:#FCD34D;">Next Node:</span> ${nextNode.id}`);
-        }
-
-        // Handle cross-map teleport
         if (nextNode.pageid !== pageId) {
             const clone = cloneTokenToPage(
                 obj,
@@ -397,26 +352,14 @@ on('change:graphic', (obj, prev) => {
                 nextNode.obj.get('left'),
                 nextNode.obj.get('top')
             );
-
             if (clone) {
                 obj.remove();
-
-                const destPage = getObj('page', nextNode.pageid);
-                const destMapName = destPage ? destPage.get('name') : '(Unknown Map)';
-
-                if (state.TokenTraveler.notifications) {
-                    notifyGM('✨', '#C084FC', tokenName, destMapName,
-                        'Teleported to',
-                        `<br><span style="color:#DDD6FE;">${groupName}:</span>
-                        <br><span style="color:#93C5FD;">Node:</span> ${nextNode.id} |
-                        <span style="color:#93C5FD;">Mode:</span> ${mode}`);
-
-                    // Move player to the new page and focus camera
-                    movePlayerToPageAndFocus(clone, nextNode.pageid, nextNode.obj.get('left'), nextNode.obj.get('top'));
-                }
-            } else {
-                sendChat('TokenTraveler',
-                    `/w gm ⚠️ Failed to clone ${tokenName} to ${groupName} Node ${nextNode.id}.`);
+                movePlayerToPageAndFocus(
+                    clone,
+                    nextNode.pageid,
+                    nextNode.obj.get('left'),
+                    nextNode.obj.get('top')
+                );
             }
         } else {
             obj.set({

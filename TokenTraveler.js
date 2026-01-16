@@ -108,7 +108,7 @@ function initializeState() {
 }
 
 on('ready', () => {
-    log('🧭 TokenTraveler v1.4.1 initialized.');
+    log('🧭 TokenTraveler v1.4 initialized.');
     initializeState();
 });
 
@@ -248,13 +248,12 @@ function getTokenControllerIds(token) {
 }
 
 // ---------------------------------------------------------------------------
-// 🆕 Camera Utilities (WRAPPED PING)
+// Camera Utilities (SCOPED + DELAYED)
 // ---------------------------------------------------------------------------
 function focusPlayerCamera(playerId, pageId, x, y) {
-    sendPing(x, y, pageId, playerId, false); // 🔒 scoped ping
+    sendPing(x, y, pageId, playerId, false);
 }
 
-// Same-map camera follow
 function panPlayerCameraToToken(token) {
     const controllers = getTokenControllerIds(token);
     if (!controllers.length) return;
@@ -264,11 +263,10 @@ function panPlayerCameraToToken(token) {
     const pageId = token.get('pageid');
 
     controllers.forEach(pid => {
-        focusPlayerCamera(pid, pageId, x, y);
+        sendPing(x, y, pageId, pid, true);
     });
 }
 
-// Cross-map teleport camera follow
 function movePlayerToPageAndFocus(token, destPageId, destX, destY) {
     const controllers = getTokenControllerIds(token);
     if (!controllers.length) return;
@@ -305,7 +303,6 @@ on('change:graphic', (obj) => {
 
     if (obj.get('subtype') !== 'token') return;
     if ((obj.get('name') || '').startsWith('Traveler:')) return;
-
     if (hasCooldown(obj.id, obj.get('name'))) return;
 
     const travelers = findObjs({ _type: 'graphic' })

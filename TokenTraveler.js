@@ -108,7 +108,7 @@ function initializeState() {
 }
 
 on('ready', () => {
-    log('🧭 TokenTraveler v1.4 initialized.');
+    log('🧭 TokenTraveler v1.4.1 initialized.');
     initializeState();
 });
 
